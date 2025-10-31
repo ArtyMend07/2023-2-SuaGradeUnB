@@ -2,6 +2,9 @@ from rest_framework.test import APITestCase
 from utils import db_handler as dbh
 from utils.schedule_generator import ScheduleGenerator, LIMIT_ERROR_MESSAGE, PREFERENCE_RANGE_ERROR
 from random import randint
+from django.test import TestCase
+from unittest.mock import patch
+from api.models import Class
 
 
 class TestSchedule(APITestCase):
@@ -179,3 +182,64 @@ class TestSchedule(APITestCase):
                 classes_id=[self.class_1.id], preference=[1, 2, '3'])
         except Exception as error:
             self.assertEqual(str(error), PREFERENCE_RANGE_ERROR)
+            
+@patch('utils.schedule_generator.get_class_by_id', side_effect=Class.DoesNotExist)
+class TestScheduleGeneratorMCDC(TestCase):
+    """
+    Testa especificamente a lógica MC/DC do método _validate_preference.
+    O @patch isola o construtor de chamadas ao BD, focando na validação.
+    """
+
+    def test_validacao_preferencia_nula_CT1(self, mock_get_class):
+        """ID: CT1 (Cobre D1-V)"""
+        try:
+            # O método _validate_preference é chamado no construtor
+            generator = ScheduleGenerator(classes_id=[], preference=None)
+            
+            # SUCESSO: Se o construtor rodar sem levantar o PREFERENCE_RANGE_ERROR,
+            # o teste para esta condição (D1-V) passou.
+            # A falha em _validate_parameters_length() é esperada e não
+            # interfere no teste da lógica de preferência.
+            pass
+
+        except ValueError as e:
+            # Se um ValueError for levantado, o teste falha APENAS SE
+            # for o erro que não seja interessante.
+            self.assertNotEqual(str(e), PREFERENCE_RANGE_ERROR, "CT1 falhou, levantou o PREFERENCE_RANGE_ERROR inesperadamente")
+        except Class.DoesNotExist:
+            # Erro esperado do mock, pois o teste foca no _validate_preference
+            pass
+
+    def test_validacao_preferencia_lista_valida_CT2(self, mock_get_class):
+        """ID: CT2 (Cobre Linha 1: [V,V,V])"""
+        try:
+            generator = ScheduleGenerator(classes_id=[], preference=[1, 2, 3])
+            
+            # SUCESSO: Se o construtor rodar sem levantar o PREFERENCE_RANGE_ERROR,
+            # o teste para esta condição (Linha 1) passou.
+            pass 
+
+        except ValueError as e:
+            self.assertNotEqual(str(e), PREFERENCE_RANGE_ERROR, "CT2 falhou, levantou o PREFERENCE_RANGE_ERROR inesperadamente")
+        except Class.DoesNotExist:
+            pass
+
+    def test_validacao_preferencia_acima_limite_CT3(self, mock_get_class):
+        """ID: CT3 (Cobre Linha 2: [V,V,F])"""
+        # Testa o par de independência da Condição 3 (x <= 3)
+        with self.assertRaisesMessage(ValueError, PREFERENCE_RANGE_ERROR):
+            ScheduleGenerator(classes_id=[], preference=[4])
+
+    def test_validacao_preferencia_abaixo_limite_CT4(self, mock_get_class):
+        """ID: CT4 (Cobre Linha 3: [V,F,V])"""
+        # Testa o par de independência da Condição 2 (1 <= x)
+        with self.assertRaisesMessage(ValueError, PREFERENCE_RANGE_ERROR):
+            ScheduleGenerator(classes_id=[], preference=[0])
+
+    def test_validacao_preferencia_tipo_invalido_CT5(self, mock_get_class):
+        """ID: CT5 (Cobre Linha 5: [F,V,V])"""
+        # Testa o par de independência da Condição 1 (isinstance)
+        # Este teste já existia (test_with_invalid_preference), 
+        # mas é reimplementado aqui para completar a suíte MC/DC.
+        with self.assertRaisesMessage(ValueError, PREFERENCE_RANGE_ERROR):
+            ScheduleGenerator(classes_id=[], preference=["2"])
