@@ -21,7 +21,9 @@ import deleteSchedule from '@/app/utils/api/deleteSchedule';
 import { errorToast, successToast } from '@/app/utils/toast';
 
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { AxiosError } from 'axios';
+import { construirNomeArquivo } from '@/app/utils/exportFilename';
 
 const commonError = () => errorToast('Houve um erro na atualização das grades!');
 
@@ -116,6 +118,9 @@ function BottomPart(props: {
                 }}>
                     <Image width={25} height={25} src={downloadIcon} alt="ícone de download" />
                 </button>
+                <button onClick={() => exportarParaPNG(props.index, !!props.isCloud)}>
+                    Exportar PNG
+                </button>
                 <DeleteButton setActiveDeleteModal={props.setters.setActiveDeleteModal} />
             </div>
         </div>
@@ -175,6 +180,54 @@ function handleDownloadPDF(isCloud: boolean, index: number) {
         width: 1150, windowWidth: 2000,
     });
 }
+
+
+const ESCALA_EXPORTACAO = 2;
+const OPCOES_HTML2CANVAS = { 
+    scale: ESCALA_EXPORTACAO, 
+    allowTaint: true, 
+    useCORS: true 
+};
+const ID_ELEMENTO_DOWNLOAD = 'download-content';
+const FORMATO_DATA = 'image/png';
+export const MENSAGEM_EXPORTACAO_CONCLUIDA = 'Exportação concluída';
+
+function downloadarArquivo(url: string, nomeArquivo: string): void {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function tratarErroExportacao(erro: Error): void {
+    console.error('Erro ao exportar PNG:', erro);
+    errorToast('Erro ao exportar imagem');
+}
+
+function processarCanvasExportacao(canvas: HTMLCanvasElement, index: number, isCloud: boolean): void {
+    const url = canvas.toDataURL(FORMATO_DATA);
+    const nomeArquivo = construirNomeArquivo(index, isCloud);
+    downloadarArquivo(url, nomeArquivo);
+    successToast(MENSAGEM_EXPORTACAO_CONCLUIDA);
+}
+
+function exportarParaPNG(index: number, isCloud: boolean) {
+    const elemento = document.getElementById(ID_ELEMENTO_DOWNLOAD);
+    
+    if (!elemento) {
+        errorToast('Elemento não encontrado');
+        return;
+    }
+
+    html2canvas(elemento, OPCOES_HTML2CANVAS)
+        .then((canvas) => processarCanvasExportacao(canvas, index, isCloud))
+        .catch(tratarErroExportacao);
+}
+
+// Exportar funções para testes
+export { exportarParaPNG, construirNomeArquivo as obterNomeArquivo };
 
 export default function SchedulePreview({ localSchedule, cloudSchedule, index, position, isCloud = false }: {
     localSchedule?: Array<ScheduleClassType>;
